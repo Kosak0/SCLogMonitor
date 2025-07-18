@@ -1179,7 +1179,6 @@ class ConfigWindow:
         """Cancelar y cerrar ventana"""
         self.window.destroy()
 
-
 class StarCitizenLogMonitor:
     def __init__(self):
         self.root = tk.Tk()
