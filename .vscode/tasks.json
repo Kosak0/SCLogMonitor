@@ -1,0 +1,94 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build StarCitizen Monitor EXE",
+            "type": "shell",
+            "command": "pyinstaller",
+            "args": [
+                "--onefile",
+                "--windowed",
+                "--name", "StarCitizenMonitor",
+                "--icon=logoStar.ico",
+                "--add-data=*.json:.",
+                "--add-data=logoStar.ico:.",
+                "--hidden-import=tkinter",
+                "--hidden-import=tkinter.ttk",
+                "--hidden-import=tkinter.scrolledtext",
+                "--hidden-import=tkinter.messagebox",
+                "--hidden-import=tkinter.filedialog",
+                "--hidden-import=requests",
+                "--hidden-import=lxml",
+                "--hidden-import=lxml.html",
+                "--clean",
+                "--noconfirm",
+                "sc_monitor.py"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "Build (Debug Mode)",
+            "type": "shell",
+            "command": "pyinstaller",
+            "args": [
+                "--onefile",
+                "--windowed",
+                "--name", "StarCitizenMonitor_Debug",
+                "--icon=icon.ico",
+                "--add-data", "*.json;.",
+                "--hidden-import=tkinter",
+                "--hidden-import=tkinter.ttk",
+                "--hidden-import=tkinter.scrolledtext",
+                "--hidden-import=tkinter.messagebox",
+                "--hidden-import=tkinter.filedialog",
+                "--hidden-import=requests",
+                "--hidden-import=lxml",
+                "--hidden-import=lxml.html",
+                "--debug=all",
+                "--clean",
+                "--noconfirm",
+                "sc_monitor.py"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean Build Files",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "if exist build rmdir /s /q build && if exist dist rmdir /s /q dist && if exist *.spec del *.spec && echo Build files cleaned!"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+    ]
+}
