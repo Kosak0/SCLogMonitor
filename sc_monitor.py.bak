@@ -1,0 +1,1317 @@
+import tkinter as tk
+from tkinter import ttk, scrolledtext, messagebox, filedialog
+from PIL import Image, ImageTk
+import time
+import re
+import requests
+from lxml import html
+import threading
+import queue
+from datetime import datetime
+import json
+import sys
+import os
+import math
+
+def get_resource_path(relative_path):
+    """Obtener la ruta correcta para recursos, funciona tanto en desarrollo como compilado"""
+    try:
+        # PyInstaller crea una carpeta temporal y almacena la ruta en _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # En desarrollo, usar la ruta del script
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
+class ConfigWindow:
+    def __init__(self, parent, config_data):
+        self.parent = parent
+        self.config = config_data.copy()
+        self.window = tk.Toplevel(parent.root)
+        self.setup_window()
+        self.setup_ui()
+        
+    def setup_window(self):
+        """Configurar ventana de configuración"""
+        self.window.title("Configuración - Star Citizen Log Monitor")
+        self.window.geometry("500x700")
+        self.window.configure(bg='#1a1a1a')
+        self.window.resizable(False, False)
+        
+        # Configurar icono también para la ventana de configuración
+        try:
+            icon_path = get_resource_path('logoStar.ico')
+            if os.path.exists(icon_path):
+                self.window.iconbitmap(icon_path)
+            elif hasattr(self.parent, 'logo'):
+                self.window.iconphoto(False, self.parent.logo)
+        except Exception as e:
+            print(f"Error configurando icono en ventana de configuración: {e}")
+        
+        # Hacer modal
+        self.window.transient(self.parent.root)
+        self.window.grab_set()
+        
+        # Centrar en la pantalla
+        self.window.geometry("+{}+{}".format(
+            (self.window.winfo_screenwidth() // 2) - 250,
+            (self.window.winfo_screenheight() // 2) - 350
+        ))
+        
+    def setup_ui(self):
+        """Configurar interfaz de configuración"""
+        # Frame principal con scroll
+        main_frame = tk.Frame(self.window, bg='#1a1a1a')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Título
+        title_label = tk.Label(main_frame, text="⚙️ Configuración", 
+                              font=('Arial', 16, 'bold'),
+                              bg='#1a1a1a', fg='#ffffff')
+        title_label.pack(pady=(0, 20))
+        
+        # Notebook para pestañas
+        self.notebook = ttk.Notebook(main_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Configurar estilo del notebook
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TNotebook', background='#1a1a1a')
+        style.configure('TNotebook.Tab', background='#404040', foreground='white')
+        
+        # Pestañas
+        self.setup_general_tab()
+        self.setup_crew_tab()
+        self.setup_blacklist_tab()
+        self.setup_appearance_tab()
+        
+        # Botones
+        self.setup_buttons(main_frame)
+        
+    def setup_general_tab(self):
+        """Configurar pestaña general"""
+        general_frame = tk.Frame(self.notebook, bg='#2a2a2a')
+        self.notebook.add(general_frame, text="General")
+        
+        # Usuario actual
+        user_frame = tk.LabelFrame(general_frame, text="Usuario", 
+                                  bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        user_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        tk.Label(user_frame, text="Tu nickname en Star Citizen:", 
+                bg='#2a2a2a', fg='white').pack(anchor=tk.W, padx=5, pady=5)
+        
+        self.user_var = tk.StringVar(value=self.config.get('current_user', ''))
+        self.user_entry = tk.Entry(user_frame, textvariable=self.user_var, 
+                                  bg='#404040', fg='white', font=('Arial', 10))
+        self.user_entry.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Archivo de log
+        log_frame = tk.LabelFrame(general_frame, text="Archivo de Log", 
+                                 bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        log_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        tk.Label(log_frame, text="Ruta del archivo Game.log:", 
+                bg='#2a2a2a', fg='white').pack(anchor=tk.W, padx=5, pady=5)
+        
+        log_path_frame = tk.Frame(log_frame, bg='#2a2a2a')
+        log_path_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.log_path_var = tk.StringVar(value=self.config.get('log_filename', ''))
+        self.log_path_entry = tk.Entry(log_path_frame, textvariable=self.log_path_var, 
+                                      bg='#404040', fg='white', font=('Arial', 9))
+        self.log_path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        browse_btn = tk.Button(log_path_frame, text="📁", command=self.browse_log_file,
+                              bg='#404040', fg='white', width=3)
+        browse_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        
+        # Botón para detectar automáticamente
+        detect_btn = tk.Button(log_frame, text="🔍 Detectar automáticamente", 
+                              command=self.auto_detect_log,
+                              bg='#2d5a2d', fg='white')
+        detect_btn.pack(pady=5)
+        
+        # Configuración de monitoreo
+        monitor_frame = tk.LabelFrame(general_frame, text="Monitoreo", 
+                                     bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        monitor_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.auto_start_var = tk.BooleanVar(value=self.config.get('auto_start', False))
+        auto_start_check = tk.Checkbutton(monitor_frame, text="Iniciar monitoreo automáticamente",
+                                         variable=self.auto_start_var,
+                                         bg='#2a2a2a', fg='white', selectcolor='#404040')
+        auto_start_check.pack(anchor=tk.W, padx=5, pady=5)
+        
+        self.save_pos_var = tk.BooleanVar(value=self.config.get('save_position', True))
+        save_pos_check = tk.Checkbutton(monitor_frame, text="Recordar posición y tamaño de ventana",
+                                       variable=self.save_pos_var,
+                                       bg='#2a2a2a', fg='white', selectcolor='#404040')
+        save_pos_check.pack(anchor=tk.W, padx=5, pady=5)
+        
+        self.show_direction_var = tk.BooleanVar(value=self.config.get('show_direction', True))
+        show_direction_check = tk.Checkbutton(monitor_frame, text="Mostrar dirección del disparo",
+                                            variable=self.show_direction_var,
+                                            bg='#2a2a2a', fg='white', selectcolor='#404040')
+        show_direction_check.pack(anchor=tk.W, padx=5, pady=5)
+        
+        self.web_info_var = tk.BooleanVar(value=self.config.get('web_info', True))
+        web_info_check = tk.Checkbutton(monitor_frame, text="Obtener información de organizaciones",
+                                       variable=self.web_info_var,
+                                       bg='#2a2a2a', fg='white', selectcolor='#404040')
+        web_info_check.pack(anchor=tk.W, padx=5, pady=5)
+        
+    def setup_crew_tab(self):
+        """Configurar pestaña de crew"""
+        crew_frame = tk.Frame(self.notebook, bg='#2a2a2a')
+        self.notebook.add(crew_frame, text="Crew")
+        
+        # Instrucciones
+        tk.Label(crew_frame, text="👥 Miembros de tu Crew", 
+                font=('Arial', 12, 'bold'), bg='#2a2a2a', fg='white').pack(pady=10)
+        
+        tk.Label(crew_frame, 
+                text="Los miembros de tu crew aparecerán resaltados en verde.\nUno por línea:",
+                bg='#2a2a2a', fg='#cccccc', justify=tk.LEFT).pack(pady=5)
+        
+        # Frame para lista de crew
+        crew_list_frame = tk.Frame(crew_frame, bg='#2a2a2a')
+        crew_list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Lista de crew actual
+        self.crew_listbox = tk.Listbox(crew_list_frame, bg='#404040', fg='white', 
+                                      font=('Arial', 10), height=8)
+        self.crew_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Scrollbar para la lista
+        crew_scrollbar = tk.Scrollbar(crew_list_frame, orient=tk.VERTICAL)
+        crew_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.crew_listbox.config(yscrollcommand=crew_scrollbar.set)
+        crew_scrollbar.config(command=self.crew_listbox.yview)
+        
+        # Cargar crew actual
+        for member in self.config.get('crew_nicks', []):
+            self.crew_listbox.insert(tk.END, member)
+        
+        # Frame para botones de crew
+        crew_buttons_frame = tk.Frame(crew_frame, bg='#2a2a2a')
+        crew_buttons_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Campo para añadir nuevo miembro
+        add_frame = tk.Frame(crew_buttons_frame, bg='#2a2a2a')
+        add_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Label(add_frame, text="Añadir miembro:", bg='#2a2a2a', fg='white').pack(side=tk.LEFT)
+        
+        self.new_crew_var = tk.StringVar()
+        self.new_crew_entry = tk.Entry(add_frame, textvariable=self.new_crew_var, 
+                                      bg='#404040', fg='white', font=('Arial', 10))
+        self.new_crew_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        self.new_crew_entry.bind('<Return>', lambda e: self.add_crew_member())
+        
+        add_btn = tk.Button(add_frame, text="➕", command=self.add_crew_member,
+                           bg='#2d5a2d', fg='white', width=3)
+        add_btn.pack(side=tk.RIGHT)
+        
+        # Botón para eliminar seleccionado
+        remove_btn = tk.Button(crew_buttons_frame, text="🗑️ Eliminar seleccionado", 
+                              command=self.remove_crew_member,
+                              bg='#5a2d2d', fg='white')
+        remove_btn.pack(pady=5)
+        
+    def setup_blacklist_tab(self):
+        """Configurar pestaña de listas negras"""
+        blacklist_frame = tk.Frame(self.notebook, bg='#2a2a2a')
+        self.notebook.add(blacklist_frame, text="Listas")
+        
+        # Scroll para esta pestaña
+        canvas = tk.Canvas(blacklist_frame, bg='#2a2a2a', highlightthickness=0)
+        scrollbar = tk.Scrollbar(blacklist_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg='#2a2a2a')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Lista negra de jugadores
+        players_black_frame = tk.LabelFrame(scrollable_frame, text="🚫 Jugadores Hostiles", 
+                                          bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        players_black_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.players_blacklist = tk.Listbox(players_black_frame, bg='#404040', fg='white', 
+                                          font=('Arial', 10), height=6)
+        self.players_blacklist.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Cargar lista negra de jugadores
+        for player in self.config.get('players_blacklist', []):
+            self.players_blacklist.insert(tk.END, player)
+        
+        # Controles para lista negra de jugadores
+        players_black_controls = tk.Frame(players_black_frame, bg='#2a2a2a')
+        players_black_controls.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.new_black_player_var = tk.StringVar()
+        tk.Entry(players_black_controls, textvariable=self.new_black_player_var, 
+                bg='#404040', fg='white').pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Button(players_black_controls, text="➕", 
+                 command=lambda: self.add_to_list(self.players_blacklist, self.new_black_player_var),
+                 bg='#5a2d2d', fg='white', width=3).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        tk.Button(players_black_frame, text="🗑️ Eliminar seleccionado", 
+                 command=lambda: self.remove_from_list(self.players_blacklist),
+                 bg='#5a2d2d', fg='white').pack(pady=5)
+        
+        # Lista blanca de jugadores
+        players_white_frame = tk.LabelFrame(scrollable_frame, text="✅ Jugadores Amigos", 
+                                          bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        players_white_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.players_whitelist = tk.Listbox(players_white_frame, bg='#404040', fg='white', 
+                                          font=('Arial', 10), height=6)
+        self.players_whitelist.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Cargar lista blanca de jugadores
+        for player in self.config.get('players_whitelist', []):
+            self.players_whitelist.insert(tk.END, player)
+        
+        # Controles para lista blanca de jugadores
+        players_white_controls = tk.Frame(players_white_frame, bg='#2a2a2a')
+        players_white_controls.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.new_white_player_var = tk.StringVar()
+        tk.Entry(players_white_controls, textvariable=self.new_white_player_var, 
+                bg='#404040', fg='white').pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Button(players_white_controls, text="➕", 
+                 command=lambda: self.add_to_list(self.players_whitelist, self.new_white_player_var),
+                 bg='#2d5a2d', fg='white', width=3).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        tk.Button(players_white_frame, text="🗑️ Eliminar seleccionado", 
+                 command=lambda: self.remove_from_list(self.players_whitelist),
+                 bg='#5a2d2d', fg='white').pack(pady=5)
+        
+        # Lista negra de organizaciones
+        orgs_black_frame = tk.LabelFrame(scrollable_frame, text="🚫 Organizaciones Hostiles", 
+                                       bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        orgs_black_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.orgs_blacklist = tk.Listbox(orgs_black_frame, bg='#404040', fg='white', 
+                                       font=('Arial', 10), height=6)
+        self.orgs_blacklist.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Cargar lista negra de organizaciones
+        for org in self.config.get('orgs_blacklist', []):
+            self.orgs_blacklist.insert(tk.END, org)
+        
+        # Controles para lista negra de organizaciones
+        orgs_black_controls = tk.Frame(orgs_black_frame, bg='#2a2a2a')
+        orgs_black_controls.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.new_black_org_var = tk.StringVar()
+        tk.Entry(orgs_black_controls, textvariable=self.new_black_org_var, 
+                bg='#404040', fg='white').pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Button(orgs_black_controls, text="➕", 
+                 command=lambda: self.add_to_list(self.orgs_blacklist, self.new_black_org_var),
+                 bg='#5a2d2d', fg='white', width=3).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        tk.Button(orgs_black_frame, text="🗑️ Eliminar seleccionado", 
+                 command=lambda: self.remove_from_list(self.orgs_blacklist),
+                 bg='#5a2d2d', fg='white').pack(pady=5)
+        
+        # Lista blanca de organizaciones
+        orgs_white_frame = tk.LabelFrame(scrollable_frame, text="✅ Organizaciones Amigas", 
+                                       bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        orgs_white_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.orgs_whitelist = tk.Listbox(orgs_white_frame, bg='#404040', fg='white', 
+                                       font=('Arial', 10), height=6)
+        self.orgs_whitelist.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Cargar lista blanca de organizaciones
+        for org in self.config.get('orgs_whitelist', []):
+            self.orgs_whitelist.insert(tk.END, org)
+        
+        # Controles para lista blanca de organizaciones
+        orgs_white_controls = tk.Frame(orgs_white_frame, bg='#2a2a2a')
+        orgs_white_controls.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.new_white_org_var = tk.StringVar()
+        tk.Entry(orgs_white_controls, textvariable=self.new_white_org_var, 
+                bg='#404040', fg='white').pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Button(orgs_white_controls, text="➕", 
+                 command=lambda: self.add_to_list(self.orgs_whitelist, self.new_white_org_var),
+                 bg='#2d5a2d', fg='white', width=3).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        tk.Button(orgs_white_frame, text="🗑️ Eliminar seleccionado", 
+                 command=lambda: self.remove_from_list(self.orgs_whitelist),
+                 bg='#5a2d2d', fg='white').pack(pady=5)
+        
+        # Empaquetar scroll
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+    def setup_appearance_tab(self):
+        """Configurar pestaña de apariencia"""
+        appearance_frame = tk.Frame(self.notebook, bg='#2a2a2a')
+        self.notebook.add(appearance_frame, text="Apariencia")
+        
+        # Configuración de ventana
+        window_frame = tk.LabelFrame(appearance_frame, text="Ventana", 
+                                    bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        window_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Transparencia
+        transparency_frame = tk.Frame(window_frame, bg='#2a2a2a')
+        transparency_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        tk.Label(transparency_frame, text="Transparencia:", 
+                bg='#2a2a2a', fg='white').pack(side=tk.LEFT)
+        
+        self.transparency_var = tk.DoubleVar(value=self.config.get('transparency', 0.9))
+        transparency_scale = tk.Scale(transparency_frame, variable=self.transparency_var,
+                                     from_=0.3, to=1.0, resolution=0.1, orient=tk.HORIZONTAL,
+                                     bg='#2a2a2a', fg='white', highlightthickness=0)
+        transparency_scale.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=5)
+        
+        # Tamaño de fuente
+        font_frame = tk.Frame(window_frame, bg='#2a2a2a')
+        font_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        tk.Label(font_frame, text="Tamaño de fuente:", 
+                bg='#2a2a2a', fg='white').pack(side=tk.LEFT)
+        
+        self.font_size_var = tk.IntVar(value=self.config.get('font_size', 10))
+        font_size_spin = tk.Spinbox(font_frame, textvariable=self.font_size_var,
+                                   from_=8, to=16, bg='#404040', fg='white', width=5)
+        font_size_spin.pack(side=tk.RIGHT)
+        
+        # Configuración de overlay
+        overlay_frame = tk.LabelFrame(appearance_frame, text="Modo Overlay", 
+                                     bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        overlay_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Posición predeterminada
+        pos_frame = tk.Frame(overlay_frame, bg='#2a2a2a')
+        pos_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        tk.Label(pos_frame, text="Posición predeterminada:", 
+                bg='#2a2a2a', fg='white').pack(side=tk.LEFT)
+        
+        self.overlay_pos_var = tk.StringVar(value=self.config.get('overlay_position', 'top'))
+        pos_combo = ttk.Combobox(pos_frame, textvariable=self.overlay_pos_var,
+                                values=['top', 'bottom', 'left', 'right', 'center'],
+                                state='readonly', width=10)
+        pos_combo.pack(side=tk.RIGHT)
+        
+        # Configuración de colores
+        colors_frame = tk.LabelFrame(appearance_frame, text="Colores", 
+                                    bg='#2a2a2a', fg='white', font=('Arial', 10, 'bold'))
+        colors_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Mostrar colores actuales
+        color_info = tk.Label(colors_frame, 
+                             text="🟡 Tu usuario  🟢 Crew/Amigos  🔴 Enemigos  🟠 Neutrales  🔵 Sistema",
+                             bg='#2a2a2a', fg='white', font=('Arial', 9))
+        color_info.pack(pady=5)
+        
+    def add_to_list(self, listbox, var):
+        """Añadir elemento a lista"""
+        item = var.get().strip()
+        if item:
+            listbox.insert(tk.END, item)
+            var.set("")
+            
+    def remove_from_list(self, listbox):
+        """Eliminar elemento de lista"""
+        selection = listbox.curselection()
+        if selection:
+            listbox.delete(selection[0])
+            
+    def get_list_items(self, listbox):
+        """Obtener items de una lista"""
+        return [listbox.get(i) for i in range(listbox.size())]
+        
+    def setup_buttons(self, parent):
+        """Configurar botones principales"""
+        buttons_frame = tk.Frame(parent, bg='#1a1a1a')
+        buttons_frame.pack(fill=tk.X, pady=10)
+        
+        # Botón cancelar
+        cancel_btn = tk.Button(buttons_frame, text="❌ Cancelar", 
+                              command=self.cancel,
+                              bg='#5a2d2d', fg='white', width=12)
+        cancel_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Botón aplicar
+        apply_btn = tk.Button(buttons_frame, text="✅ Aplicar", 
+                             command=self.apply_config,
+                             bg='#2d5a2d', fg='white', width=12)
+        apply_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Botón guardar y cerrar
+        save_btn = tk.Button(buttons_frame, text="💾 Guardar", 
+                            command=self.save_and_close,
+                            bg='#2d4a5a', fg='white', width=12)
+        save_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Botón restaurar predeterminados
+        reset_btn = tk.Button(buttons_frame, text="🔄 Restaurar", 
+                             command=self.restore_defaults,
+                             bg='#404040', fg='white', width=12)
+        reset_btn.pack(side=tk.RIGHT, padx=5)
+        
+    def browse_log_file(self):
+        """Navegar para seleccionar archivo de log"""
+        filename = filedialog.askopenfilename(
+            title="Seleccionar archivo Game.log",
+            filetypes=[("Log files", "*.log"), ("All files", "*.*")],
+            initialdir=os.path.dirname(self.log_path_var.get()) if self.log_path_var.get() else None
+        )
+        if filename:
+            self.log_path_var.set(filename)
+            
+    def auto_detect_log(self):
+        """Detectar automáticamente el archivo de log"""
+        possible_paths = [
+            r'C:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log',
+            r'C:\Program Files\Roberts Space Industries\StarCitizen\PTU\Game.log',
+            r'D:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log',
+            r'D:\Program Files\Roberts Space Industries\StarCitizen\PTU\Game.log'
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                self.log_path_var.set(path)
+                messagebox.showinfo("Detectado", f"Archivo de log encontrado:\n{path}")
+                return
+                
+        messagebox.showwarning("No encontrado", 
+                              "No se pudo detectar automáticamente el archivo de log.\n"
+                              "Selecciónalo manualmente con el botón 📁")
+        
+    def add_crew_member(self):
+        """Añadir miembro al crew"""
+        member = self.new_crew_var.get().strip()
+        if member and member not in self.get_crew_list():
+            self.crew_listbox.insert(tk.END, member)
+            self.new_crew_var.set("")
+            
+    def remove_crew_member(self):
+        """Eliminar miembro seleccionado del crew"""
+        selection = self.crew_listbox.curselection()
+        if selection:
+            self.crew_listbox.delete(selection[0])
+            
+    def get_crew_list(self):
+        """Obtener lista actual de crew"""
+        return [self.crew_listbox.get(i) for i in range(self.crew_listbox.size())]
+        
+    def apply_config(self):
+        """Aplicar configuración sin cerrar ventana"""
+        self.save_config()
+        self.parent.apply_config(self.config)
+        messagebox.showinfo("Aplicado", "Configuración aplicada correctamente")
+        
+    def save_and_close(self):
+        """Guardar configuración y cerrar ventana"""
+        self.save_config()
+        self.parent.apply_config(self.config)
+        self.window.destroy()
+        
+    def save_config(self):
+        """Guardar configuración actual"""
+        self.config.update({
+            'current_user': self.user_var.get().strip(),
+            'log_filename': self.log_path_var.get().strip(),
+            'crew_nicks': self.get_crew_list(),
+            'players_blacklist': self.get_list_items(self.players_blacklist),
+            'players_whitelist': self.get_list_items(self.players_whitelist),
+            'orgs_blacklist': self.get_list_items(self.orgs_blacklist),
+            'orgs_whitelist': self.get_list_items(self.orgs_whitelist),
+            'auto_start': self.auto_start_var.get(),
+            'save_position': self.save_pos_var.get(),
+            'show_direction': self.show_direction_var.get(),
+            'web_info': self.web_info_var.get(),
+            'transparency': self.transparency_var.get(),
+            'font_size': self.font_size_var.get(),
+            'overlay_position': self.overlay_pos_var.get()
+        })
+        
+    def restore_defaults(self):
+        """Restaurar valores predeterminados"""
+        if messagebox.askyesno("Restaurar", "¿Restaurar configuración predeterminada?"):
+            defaults = {
+                'current_user': 'kosako17',
+                'log_filename': r'D:\Roberts Space Industries\StarCitizen\LIVE\Game.log',
+                'crew_nicks': [],
+                'players_blacklist': [],
+                'players_whitelist': [],
+                'orgs_blacklist': [],
+                'orgs_whitelist': [],
+                'auto_start': False,
+                'save_position': True,
+                'show_direction': True,
+                'web_info': True,
+                'transparency': 0.9,
+                'font_size': 10,
+                'overlay_position': 'top'
+            }
+            
+            # Actualizar UI
+            self.user_var.set(defaults['current_user'])
+            self.log_path_var.set(defaults['log_filename'])
+            self.auto_start_var.set(defaults['auto_start'])
+            self.save_pos_var.set(defaults['save_position'])
+            self.show_direction_var.set(defaults['show_direction'])
+            self.web_info_var.set(defaults['web_info'])
+            self.transparency_var.set(defaults['transparency'])
+            self.font_size_var.set(defaults['font_size'])
+            self.overlay_pos_var.set(defaults['overlay_position'])
+            
+            # Limpiar listas
+            self.crew_listbox.delete(0, tk.END)
+            self.players_blacklist.delete(0, tk.END)
+            self.players_whitelist.delete(0, tk.END)
+            self.orgs_blacklist.delete(0, tk.END)
+            self.orgs_whitelist.delete(0, tk.END)
+            
+    def cancel(self):
+        """Cancelar y cerrar ventana"""
+        self.window.destroy()
+
+class StarCitizenLogMonitor:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.load_config()
+        self.setup_window()
+        self.setup_variables()
+        self.setup_ui()
+        self.setup_monitoring()
+        
+        # Auto-start si está configurado
+        if self.config.get('auto_start', False):
+            self.root.after(1000, self.start_monitoring)
+
+    def load_logo(self):
+        """Cargar el logo de la aplicación"""
+        try:
+            # Intentar cargar PNG primero
+            png_path = get_resource_path('logoStar.png')
+            if os.path.exists(png_path):
+                image = Image.open(png_path)
+                image = image.resize((32, 32), Image.Resampling.LANCZOS)
+                self.logo = ImageTk.PhotoImage(image)
+                return True
+            
+            # Si no hay PNG, intentar ICO
+            ico_path = get_resource_path('logoStar.ico')
+            if os.path.exists(ico_path):
+                image = Image.open(ico_path)
+                image = image.resize((32, 32), Image.Resampling.LANCZOS)
+                self.logo = ImageTk.PhotoImage(image)
+                return True
+                
+        except Exception as e:
+            print(f"Error cargando logo: {e}")
+        
+        return False
+
+ 
+        
+    def load_config(self):
+        """Cargar configuración desde archivo"""
+        self.config = {
+            'current_user': 'endermaster',
+            'log_filename': r'C:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log',
+            'crew_nicks': [],
+            'players_blacklist': [],
+            'players_whitelist': [],
+            'orgs_blacklist': [],
+            'orgs_whitelist': [],
+            'auto_start': False,
+            'save_position': True,
+            'show_direction': True,
+            'web_info': True,
+            'transparency': 0.9,
+            'font_size': 10,
+            'overlay_position': 'top',
+            'window_geometry': '800x200+100+100',
+            'overlay_geometry': '800x120+100+10'
+        }
+        
+        try:
+            if os.path.exists("sc_monitor_config.json"):
+                with open("sc_monitor_config.json", 'r') as f:
+                    saved_config = json.load(f)
+                    self.config.update(saved_config)
+        except Exception as e:
+            print(f"Error cargando configuración: {e}")
+            
+    def setup_window(self):
+        """Configurar la ventana principal"""
+        self.root.title("Star Citizen Log Monitor")
+
+        # Configurar icono de la ventana y barra de tareas
+        try:
+            # Obtener ruta correcta del icono
+            icon_path = get_resource_path('logoStar.ico')
+            
+            print(f"Buscando icono en: {icon_path}")
+            print(f"¿Existe el icono? {os.path.exists(icon_path)}")
+            
+            # Para Windows - icono en barra de tareas y ventana
+            if os.path.exists(icon_path):
+                self.root.iconbitmap(icon_path)
+                print("Icono configurado correctamente")
+            else:
+                print("Archivo de icono no encontrado")
+
+            # Cargar logo para UI si existe
+            if self.load_logo():
+                # También usar como icono de ventana (alternativo)
+                self.root.iconphoto(False, self.logo)
+                print("Logo cargado para UI")
+        except Exception as e:
+            print(f"Error configurando icono: {e}")
+
+        # Aplicar geometría guardada
+        geometry = self.config.get('window_geometry', '800x200+100+100')
+        self.root.geometry(geometry)
+        
+        self.root.configure(bg='#1a1a1a')
+        
+        # Aplicar transparencia
+        transparency = self.config.get('transparency', 0.9)
+        self.root.wm_attributes("-alpha", transparency)
+        
+        # Permitir redimensionar
+        self.root.resizable(True, True)
+        
+        # Configurar para cerrar correctamente
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # Guardar posición cuando se mueva/redimensione
+        if self.config.get('save_position', True):
+            self.root.bind('<Configure>', self.on_window_configure)
+            
+    def setup_variables(self):
+        """Configurar variables del monitor"""
+        self.player_info_cache = {}
+        self.messages_shown = set()
+        self.message_queue = queue.Queue()
+        self.monitoring = False
+        self.monitor_thread = None
+        
+        # Variables de la configuración
+        self.CURRENT_USER = self.config.get('current_user', 'endermaster')
+        self.LOG_FILENAME = self.config.get('log_filename', r'C:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log')
+        self.CREW_NICKS = self.config.get('crew_nicks', [])
+        self.PLAYERS_BLACKLIST = self.config.get('players_blacklist', [])
+        self.PLAYERS_WHITELIST = self.config.get('players_whitelist', [])
+        self.ORGS_BLACKLIST = self.config.get('orgs_blacklist', [])
+        self.ORGS_WHITELIST = self.config.get('orgs_whitelist', [])
+        
+        # Colores ANSI (para uso interno)
+        self.GREEN = "\033[92m"
+        self.YELLOW = "\033[93m"
+        self.RED = "\033[91m"
+        self.RESET = "\033[0m"
+        
+    def setup_ui(self):
+        """Configurar la interfaz de usuario"""
+        # Frame principal
+        main_frame = tk.Frame(self.root, bg='#1a1a1a')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        header_frame = tk.Frame(main_frame, bg='#1a1a1a')
+        header_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Añadir logo al header si existe
+        if hasattr(self, 'logo'):
+            logo_label = tk.Label(header_frame, image=self.logo, bg='#1a1a1a')
+            logo_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Título
+        title_label = tk.Label(header_frame, text="Star Citizen Log Monitor", 
+                            font=('Arial', 14, 'bold'), bg='#1a1a1a', fg='white')
+        title_label.pack(side=tk.LEFT)
+        
+        # Frame de controles
+        control_frame = tk.Frame(main_frame, bg='#1a1a1a')
+        control_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Botones de control
+        self.start_button = tk.Button(control_frame, text="▶ Iniciar", 
+                                     command=self.start_monitoring,
+                                     bg='#2d5a2d', fg='white', relief=tk.FLAT)
+        self.start_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.stop_button = tk.Button(control_frame, text="⏹ Detener", 
+                                    command=self.stop_monitoring,
+                                    bg='#5a2d2d', fg='white', relief=tk.FLAT,
+                                    state=tk.DISABLED)
+        self.stop_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.clear_button = tk.Button(control_frame, text="🗑 Limpiar", 
+                                     command=self.clear_messages,
+                                     bg='#404040', fg='white', relief=tk.FLAT)
+        self.clear_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Botón de configuración
+        self.config_button = tk.Button(control_frame, text="⚙️ Config", 
+                                      command=self.open_config,
+                                      bg='#404040', fg='white', relief=tk.FLAT)
+        self.config_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Checkbox para overlay mode
+        self.overlay_var = tk.BooleanVar()
+        self.overlay_check = tk.Checkbutton(control_frame, text="Modo Overlay", 
+                                          variable=self.overlay_var,
+                                          command=self.toggle_overlay_mode,
+                                          bg='#1a1a1a', fg='white', 
+                                          selectcolor='#404040')
+        self.overlay_check.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Frame para información rápida
+        info_frame = tk.Frame(control_frame, bg='#1a1a1a')
+        info_frame.pack(side=tk.RIGHT)
+        
+        tk.Label(info_frame, text="Usuario:", bg='#1a1a1a', fg='white').pack(side=tk.LEFT)
+        self.user_label = tk.Label(info_frame, text=self.CURRENT_USER, 
+                                  bg='#1a1a1a', fg='#ffff00', font=('Arial', 10, 'bold'))
+        self.user_label.pack(side=tk.LEFT, padx=(2, 10))
+        
+        tk.Label(info_frame, text="Crew:", bg='#1a1a1a', fg='white').pack(side=tk.LEFT)
+        crew_count = len(self.CREW_NICKS)
+        self.crew_label = tk.Label(info_frame, text=f"{crew_count} miembros", 
+                                  bg='#1a1a1a', fg='#00ff00', font=('Arial', 10, 'bold'))
+        self.crew_label.pack(side=tk.LEFT, padx=(2, 0))
+        
+        # Área de mensajes
+        self.setup_message_area(main_frame)
+        
+    def setup_message_area(self, parent):
+        """Configurar el área de mensajes"""
+        # Frame para el área de mensajes
+        message_frame = tk.Frame(parent, bg='#1a1a1a')
+        message_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Texto con scroll
+        font_size = self.config.get('font_size', 10)
+        self.text_area = scrolledtext.ScrolledText(
+            message_frame,
+            wrap=tk.WORD,
+            bg='#2a2a2a',
+            fg='#ffffff',
+            insertbackground='white',
+            font=('Consolas', font_size),
+            height=8
+        )
+        self.text_area.pack(fill=tk.BOTH, expand=True)
+        
+        # Configurar tags para colores
+        self.text_area.tag_configure("user", foreground="#ffff00")      # Amarillo
+        self.text_area.tag_configure("crew", foreground="#00ff00")      # Verde
+        self.text_area.tag_configure("enemy", foreground="#ff0000")     # Rojo
+        self.text_area.tag_configure("friendly", foreground="#00ff00")  # Verde
+        self.text_area.tag_configure("neutral", foreground="#ffa500")   # Naranja
+        self.text_area.tag_configure("info", foreground="#00ffff")      # Cyan
+        self.text_area.tag_configure("timestamp", foreground="#888888") # Gris
+        
+    def setup_monitoring(self):
+        """Configurar el sistema de monitoreo"""
+        # Iniciar el procesador de mensajes
+        self.root.after(100, self.process_message_queue)
+        
+    def open_config(self):
+        """Abrir ventana de configuración"""
+        config_window = ConfigWindow(self, self.config)
+        
+    def apply_config(self, new_config):
+        """Aplicar nueva configuración"""
+        self.config.update(new_config)
+        
+        # Actualizar variables
+        self.CURRENT_USER = self.config.get('current_user', 'endermaster')
+        self.LOG_FILENAME = self.config.get('log_filename', '')
+        self.CREW_NICKS = self.config.get('crew_nicks', [])
+        self.PLAYERS_BLACKLIST = self.config.get('players_blacklist', [])
+        self.PLAYERS_WHITELIST = self.config.get('players_whitelist', [])
+        self.ORGS_BLACKLIST = self.config.get('orgs_blacklist', [])
+        self.ORGS_WHITELIST = self.config.get('orgs_whitelist', [])
+        
+        # Actualizar UI
+        self.user_label.config(text=self.CURRENT_USER)
+        crew_count = len(self.CREW_NICKS)
+        self.crew_label.config(text=f"{crew_count} miembros")
+        
+        # Aplicar transparencia
+        transparency = self.config.get('transparency', 0.9)
+        self.root.wm_attributes("-alpha", transparency)
+        
+        # Aplicar tamaño de fuente
+        font_size = self.config.get('font_size', 10)
+        self.text_area.config(font=('Consolas', font_size))
+        
+        # Guardar configuración
+        self.save_config()
+        
+        self.add_message("Configuración aplicada correctamente", "info")
+        
+    def get_actor_info(self, actor_name, actor_id=None):
+        """Obtener información mejorada del actor"""
+        if actor_id and actor_id in actor_name:
+            # Es un PNJ, limpiar nombre
+            return actor_name[:-(len(actor_id)+1)]
+        else:
+            # Verificar si es un PNJ con patrón
+            match = re.search(r"(.+)_\d{6,14}", actor_name)
+            if match:
+                return match.group(1)
+            else:
+                # Es un jugador real, obtener info web si está habilitado
+                return self.get_web_info(actor_name)
+                
+    def get_web_info(self, player_handle):
+        """Obtener información web del jugador"""
+        if not self.config.get('web_info', True):
+            return player_handle
+            
+        # Verificar cache
+        if player_handle in self.player_info_cache:
+            player_info = self.player_info_cache[player_handle]
+        else:
+            # Obtener información de la web
+            player_info = self.fetch_player_info(player_handle)
+            self.player_info_cache[player_handle] = player_info
+            
+        # Determinar color y información adicional
+        return self.format_player_info(player_handle, player_info)
+        
+    def fetch_player_info(self, player_handle):
+        """Obtener información del jugador desde RSI"""
+        player_info = {
+            "mainOrgName": "",
+            "mainOrg": "",
+            "orgRang": "",
+            "enlisted": "",
+            "location": "",
+            "fluency": ""
+        }
+        
+        try:
+            url = f"https://robertsspaceindustries.com/en/citizens/{player_handle}"
+            resp = requests.get(url, timeout=5)
+            text = resp.text
+            
+            # Extraer información de la organización
+            pattern = r'(?s)<span class="label data\d+">Spectrum Identification \(SID\)</span>.+<strong class="value data\d+">([\w\d]+)</strong>'
+            match = re.search(pattern, text)
+            if match:
+                player_info["mainOrg"] = match.group(1)
+                
+            pattern = r'(?s)<a href="\/orgs\/[\w\d]+" class="value data\d+" style="background-position:-\d+px center">\s*([\w\d\s]+)\s*</a>'
+            match = re.search(pattern, text)
+            if match:
+                player_info["mainOrgName"] = match.group(1)
+                
+            pattern = r'(?s)<span class="label">Enlisted</span>[\s]+<strong class="value">\s*([\w\d\s]+, \d{4})\s*</strong>'
+            match = re.search(pattern, text)
+            if match:
+                player_info["enlisted"] = match.group(1)
+                
+            pattern = r'(?s)<span class="label">Fluency</span>[\s]+<strong class="value">\s*([\w\d\s,]+[\w\d])\s*</strong>'
+            match = re.search(pattern, text)
+            if match:
+                player_info["fluency"] = match.group(1).replace(' ', '')
+                
+        except Exception:
+            pass
+            
+        return player_info
+        
+    def format_player_info(self, player_handle, player_info):
+        """Formatear información del jugador con colores"""
+        # Información adicional
+        info_parts = []
+        if player_info.get("mainOrg"):
+            info_parts.append(f"{player_info['mainOrg']}-{player_info['mainOrgName']}")
+        if player_info.get("enlisted"):
+            info_parts.append(player_info["enlisted"])
+        if player_info.get("fluency"):
+            info_parts.append(player_info["fluency"])
+            
+        info_text = f" [{' | '.join(info_parts)}]" if info_parts else ""
+        
+        # Determinar tipo de jugador
+        if player_handle.upper() == self.CURRENT_USER.upper():
+            return ("user", f"{player_handle}{info_text}")
+        elif player_handle == 'unknown':
+            return ("neutral", f"{player_handle}{info_text}")
+        elif (player_handle.upper() in [p.upper() for p in self.PLAYERS_BLACKLIST] or
+              player_info.get("mainOrg", "").upper() in [o.upper() for o in self.ORGS_BLACKLIST]):
+            return ("enemy", f"{player_handle}{info_text}")
+        elif (player_handle.upper() in [p.upper() for p in self.PLAYERS_WHITELIST] or
+              player_info.get("mainOrg", "").upper() in [o.upper() for o in self.ORGS_WHITELIST] or
+              player_handle.upper() in [c.upper() for c in self.CREW_NICKS]):
+            return ("friendly", f"{player_handle}{info_text}")
+        else:
+            return ("neutral", f"{player_handle}{info_text}")
+            
+    def get_direction_info(self, x, y, z):
+        """Obtener información de dirección del disparo"""
+        if not self.config.get('show_direction', True):
+            return ""
+            
+        angle = math.degrees(math.atan2(x, y))
+        if angle < 0:
+            angle = angle + 360
+        return f" [{round(angle, 1)}°]"
+        
+    def on_window_configure(self, event):
+        """Manejar cambios en la ventana"""
+        if event.widget == self.root and self.config.get('save_position', True):
+            # Guardar geometría actual
+            geometry = self.root.geometry()
+            if self.overlay_var.get():
+                self.config['overlay_geometry'] = geometry
+            else:
+                self.config['window_geometry'] = geometry
+        
+    def toggle_overlay_mode(self):
+        """Activar/desactivar modo overlay"""
+        if self.overlay_var.get():
+            # Guardar posición actual antes de cambiar
+            if self.config.get('save_position', True):
+                self.config['window_geometry'] = self.root.geometry()
+            
+            # Modo overlay: ventana sin bordes, siempre arriba
+            self.root.wm_attributes("-topmost", True)
+            self.root.overrideredirect(True)
+            
+            # Aplicar geometría guardada para overlay o posición predeterminada
+            overlay_geometry = self.config.get('overlay_geometry', '800x120+100+10')
+            self.root.geometry(overlay_geometry)
+            
+            # Hacer que se pueda mover arrastrando
+            self.root.bind('<Button-1>', self.start_drag)
+            self.root.bind('<B1-Motion>', self.drag_window)
+            
+        else:
+            # Guardar posición overlay actual
+            if self.config.get('save_position', True):
+                self.config['overlay_geometry'] = self.root.geometry()
+            
+            # Modo normal
+            self.root.wm_attributes("-topmost", False)
+            self.root.overrideredirect(False)
+            
+            # Restaurar geometría normal
+            window_geometry = self.config.get('window_geometry', '800x200+100+100')
+            self.root.geometry(window_geometry)
+            
+            # Remover bindings de arrastre
+            self.root.unbind('<Button-1>')
+            self.root.unbind('<B1-Motion>')
+    
+    def start_drag(self, event):
+        """Iniciar arrastre de ventana"""
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+        
+    def drag_window(self, event):
+        """Arrastrar ventana"""
+        x = self.root.winfo_pointerx() - self.drag_start_x
+        y = self.root.winfo_pointery() - self.drag_start_y
+        self.root.geometry(f"+{x}+{y}")
+        
+    def start_monitoring(self):
+        """Iniciar el monitoreo del log"""
+        if not self.monitoring:
+            self.monitoring = True
+            self.start_button.config(state=tk.DISABLED)
+            self.stop_button.config(state=tk.NORMAL)
+            
+            # Iniciar thread de monitoreo
+            self.monitor_thread = threading.Thread(target=self.monitor_log, daemon=True)
+            self.monitor_thread.start()
+            
+            self.add_message("Sistema iniciado", "info")
+            
+    def stop_monitoring(self):
+        """Detener el monitoreo"""
+        self.monitoring = False
+        self.start_button.config(state=tk.NORMAL)
+        self.stop_button.config(state=tk.DISABLED)
+        self.add_message("Sistema detenido", "info")
+        
+    def clear_messages(self):
+        """Limpiar el área de mensajes"""
+        self.text_area.delete(1.0, tk.END)
+        self.messages_shown.clear()
+        
+    def add_message(self, message, msg_type="normal"):
+        """Añadir mensaje a la cola"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.message_queue.put((timestamp, message, msg_type))
+        
+    def process_message_queue(self):
+        """Procesar cola de mensajes"""
+        try:
+            while True:
+                timestamp, message, msg_type = self.message_queue.get_nowait()
+                
+                # Insertar timestamp
+                self.text_area.insert(tk.END, f"[{timestamp}] ", "timestamp")
+                
+                # Procesar mensaje con colores
+                self.insert_colored_message(message, msg_type)
+                
+                # Nueva línea
+                self.text_area.insert(tk.END, "\n")
+                
+                # Scroll automático
+                self.text_area.see(tk.END)
+                
+        except queue.Empty:
+            pass
+        
+        # Programar siguiente procesamiento
+        self.root.after(100, self.process_message_queue)
+        
+    def insert_colored_message(self, message, msg_type):
+        """Insertar mensaje con colores apropiados"""
+        if msg_type in ["info", "user", "crew", "enemy", "friendly", "neutral"]:
+            self.text_area.insert(tk.END, message, msg_type)
+        else:
+            self.text_area.insert(tk.END, message)
+            
+    def monitor_log(self):
+        """Monitorear el archivo de log en un thread separado"""
+        try:
+            if not os.path.exists(self.LOG_FILENAME):
+                self.add_message(f"Error: No se encuentra el archivo de log: {self.LOG_FILENAME}", "info")
+                return
+                
+            with open(self.LOG_FILENAME, 'r', encoding="latin1") as log_file:
+                # Ir al final del archivo
+                log_file.seek(0, 2)
+                
+                while self.monitoring:
+                    line = log_file.readline()
+                    if not line:
+                        time.sleep(0.5)
+                        continue
+                        
+                    # Procesar línea
+                    result = self.process_line(line)
+                    if result:
+                        msg, msg_type = result
+                        core_msg = self.strip_datetime(msg)
+                        
+                        if core_msg not in self.messages_shown:
+                            self.add_message(msg, msg_type)
+                            self.messages_shown.add(core_msg)
+                            
+        except Exception as e:
+            self.add_message(f"Error en monitoreo: {str(e)}", "info")
+            
+    def process_line(self, line):
+        """Procesar una línea del log"""
+        str_now = datetime.now().strftime("%H:%M:%S")
+        
+        # Detectar muerte de actor
+        if "<Actor Death> CActor::Kill:" in line:
+            return self.detect_actor_death(line)
+            
+        # Detectar ataque con misiles
+        if "<Debug Hostility Events>" in line:
+            return self.detect_missile_target(line)
+            
+        # Detectar destrucción de vehículos
+        if "<Vehicle Destruction>" in line:
+            return self.detect_vehicle_destruction(line)
+            
+        # Detectar spawn de jugador
+        if "<[ActorState] Corpse>" in line:
+            return self.detect_player_spawned(line)
+            
+        return None
+        
+    def detect_actor_death(self, line):
+        """Detectar muerte de actor"""
+        pattern = r"<(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})\.\d{3}Z> \[Notice\] <Actor Death> CActor::Kill: '([\w-]+)' \[(\d+)\] in zone '([\w-]+)' killed by '([\w-]+)' \[(\d+)\] using '([\w-]+)' \[Class ([\w-]+)\] with damage type '([\w-]+)' from direction x: (-?\d\.\d+), y: (-?\d\.\d+), z: (-?\d\.\d+)"
+        match = re.search(pattern, line)
+        if match:
+            date, time_str, victim, victim_id, zone, killer, killer_id, weapon, weapon_class, damage_type, x, y, z = match.groups()
+            
+            # Formatear fecha
+            formatted_date = f"{date[8:10]}/{date[5:7]}/{date[2:4]}"
+            
+            # Obtener información de actores
+            victim_info = self.get_actor_info(victim, victim_id)
+            killer_info = self.get_actor_info(killer, killer_id)
+            
+            # Información de dirección
+            direction_info = self.get_direction_info(float(x), float(y), float(z))
+            
+            # Formatear mensaje
+            if isinstance(victim_info, tuple):
+                victim_type, victim_text = victim_info
+                victim_display = victim_text
+            else:
+                victim_type = "neutral"
+                victim_display = victim_info
+                
+            if isinstance(killer_info, tuple):
+                killer_type, killer_text = killer_info
+                killer_display = killer_text
+            else:
+                killer_type = "neutral"
+                killer_display = killer_info
+                
+            msg = f"{formatted_date} · {time_str} - {victim_display} asesinado por {killer_display}{direction_info}"
+            
+            # Determinar tipo de mensaje
+            msg_type = "neutral"
+            if victim == self.CURRENT_USER:
+                msg_type = "enemy"
+            elif killer == self.CURRENT_USER:
+                msg_type = "user"
+                
+            return msg, msg_type
+        return None
+        
+    def detect_missile_target(self, line):
+        """Detectar ataque con misiles"""
+        pattern = r"<(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})\.\d{3}Z> (\[SPAM \d+\])?\[Notice\] <Debug Hostility Events> \[(\w+)\] Fake hit FROM ([\w-]+) TO ([\w-]+)\. Being sent to child ([\w-]+)"
+        match = re.search(pattern, line)
+        if match:
+            date, time_str, spam, event_type, attacker, target, child = match.groups()
+            
+            formatted_date = f"{date[8:10]}/{date[5:7]}/{date[2:4]}"
+            
+            # Obtener información de actores
+            attacker_info = self.get_actor_info(attacker)
+            target_info = self.get_actor_info(child)  # El target real es el child
+            
+            if isinstance(attacker_info, tuple):
+                attacker_type, attacker_text = attacker_info
+                attacker_display = attacker_text
+            else:
+                attacker_type = "neutral"
+                attacker_display = attacker_info
+                
+            if isinstance(target_info, tuple):
+                target_type, target_text = target_info
+                target_display = target_text
+            else:
+                target_type = "neutral"
+                target_display = target_info
+                
+            msg = f"{formatted_date} · {time_str} - {target_display} atacado con misiles 🚀 por {attacker_display}"
+            
+            return msg, "neutral"
+        return None
+        
+    def detect_vehicle_destruction(self, line):
+        """Detectar destrucción de vehículos"""
+        pattern = r"<(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})\.\d{3}Z> \[Notice\] <Vehicle Destruction> CVehicle::OnAdvanceDestroyLevel: Vehicle '([\w-]+)_\d+' \[\d+\] in zone '([\w-]+)' \[.+\] driven by '([\w-]+)' \[\d*\] advanced from destroy level (\d) to (\d) caused by '([\w-]+)' \[\d+\] with '([\w-]+)'"
+        match = re.search(pattern, line)
+        if match:
+            date, time_str, vehicle, zone, driver, from_level, to_level, destroyer, damage_type = match.groups()
+            
+            formatted_date = f"{date[8:10]}/{date[5:7]}/{date[2:4]}"
+            
+            # Obtener información de actores
+            driver_info = self.get_actor_info(driver)
+            destroyer_info = self.get_actor_info(destroyer)
+            
+            if isinstance(driver_info, tuple):
+                driver_type, driver_text = driver_info
+                driver_display = driver_text
+            else:
+                driver_type = "neutral"
+                driver_display = driver_info
+                
+            if isinstance(destroyer_info, tuple):
+                destroyer_type, destroyer_text = destroyer_info
+                destroyer_display = destroyer_text
+            else:
+                destroyer_type = "neutral"
+                destroyer_display = destroyer_info
+                
+            # Determinar tipo de destrucción
+            if int(to_level) >= 2:
+                action = "destruyó"
+            else:
+                action = "dañó"
+                
+            msg = f"{formatted_date} · {time_str} - {destroyer_display} {action} {vehicle} de {driver_display}"
+            
+            return msg, "neutral"
+        return None
+        
+    def detect_player_spawned(self, line):
+        """Detectar spawn de jugador"""
+        pattern = r"<(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})\.\d{3}Z> \[Notice\] <\[ActorState\] Corpse> \[ACTOR STATE\]\[SSCActorStateCVars::LogCorpse\] Player '([\w-]+)' <(remote|local) client>"
+        match = re.search(pattern, line)
+        if match:
+            date, time_str, player, client_type = match.groups()
+            
+            formatted_date = f"{date[8:10]}/{date[5:7]}/{date[2:4]}"
+            
+            # Obtener información del jugador
+            player_info = self.get_actor_info(player)
+            
+            if isinstance(player_info, tuple):
+                player_type, player_text = player_info
+                player_display = player_text
+            else:
+                player_type = "neutral"
+                player_display = player_info
+                
+            msg = f"{formatted_date} · {time_str} - {player_display} apareció ({client_type})"
+            
+            return msg, "neutral"
+        return None
+        
+    def strip_datetime(self, line):
+        """Quitar timestamp de la línea para comparación"""
+        return line.split(' - ', 1)[-1] if ' - ' in line else line
+        
+    def save_config(self):
+        """Guardar configuración a archivo"""
+        try:
+            with open("sc_monitor_config.json", 'w') as f:
+                json.dump(self.config, f, indent=2)
+        except Exception as e:
+            print(f"Error guardando configuración: {e}")
+            
+    def on_closing(self):
+        """Manejar cierre de aplicación"""
+        self.monitoring = False
+        
+        # Guardar posición actual
+        if self.config.get('save_position', True):
+            geometry = self.root.geometry()
+            if self.overlay_var.get():
+                self.config['overlay_geometry'] = geometry
+            else:
+                self.config['window_geometry'] = geometry
+        
+        self.save_config()
+        self.root.destroy()
+        
+    def run(self):
+        """Ejecutar la aplicación"""
+        self.root.mainloop()
+
+if __name__ == "__main__":
+    app = StarCitizenLogMonitor()
+    app.run()

@@ -1,0 +1,20 @@
+{
+  "current_user": "AsMaldini",
+  "log_filename": "C:\\Program Files\\Roberts Space Industries\\StarCitizen\\LIVE\\Game.log",
+  "crew_nicks": [],
+  "players_blacklist": [],
+  "players_whitelist": [],
+  "orgs_blacklist": [],
+  "orgs_whitelist": [
+    "AZS"
+  ],
+  "auto_start": false,
+  "save_position": true,
+  "show_direction": true,
+  "web_info": true,
+  "transparency": 1.0,
+  "font_size": 11,
+  "overlay_position": "top",
+  "window_geometry": "800x200+388+449",
+  "overlay_geometry": "800x120+522+194"
+}
