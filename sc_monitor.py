@@ -2343,30 +2343,159 @@ class PerformanceMonitor:
         except ImportError:
             return 0
 
-
 class ThemeManager:
-    """Clase para gestionar temas visuales"""
+    """Sistema de gestión de temas mejorado y funcional"""
 
-    THEMES = {
-        'default': {
-            'bg': '#ffffff',
-            'fg': '#000000',
-            'select_bg': '#0078d4',
-            'select_fg': '#ffffff'
-        },
-        'dark': {
-            'bg': '#2d2d2d',
-            'fg': '#ffffff',
-            'select_bg': '#404040',
-            'select_fg': '#ffffff'
-        },
-        'blue': {
-            'bg': '#f0f8ff',
-            'fg': '#000080',
-            'select_bg': '#4169e1',
-            'select_fg': '#ffffff'
+    def __init__(self, root):
+        self.root = root
+        self.current_theme = 'dark'
+        self.registered_widgets = []
+
+        # Definir temas completos
+        self.themes = {
+            'dark': {
+                'bg_primary': '#1a1a1a',
+                'bg_secondary': '#2a2a2a', 
+                'bg_tertiary': '#404040',
+                'fg_primary': '#ffffff',
+                'fg_secondary': '#cccccc',
+                'accent': '#0078d4',
+                'success': '#2d5a2d',
+                'warning': '#5a4a2d',
+                'error': '#5a2d2d',
+                'user_color': '#ffff00',
+                'crew_color': '#00ff00',
+                'enemy_color': '#ff0000',
+                'neutral_color': '#ffa500',
+                'info_color': '#00ffff'
+            },
+            'light': {
+                'bg_primary': '#ffffff',
+                'bg_secondary': '#f5f5f5',
+                'bg_tertiary': '#e0e0e0',
+                'fg_primary': '#000000',
+                'fg_secondary': '#333333',
+                'accent': '#0078d4',
+                'success': '#28a745',
+                'warning': '#ffc107',
+                'error': '#dc3545',
+                'user_color': '#ff8c00',
+                'crew_color': '#228b22',
+                'enemy_color': '#dc143c',
+                'neutral_color': '#4682b4',
+                'info_color': '#17a2b8'
+            },
+            'blue': {
+                'bg_primary': '#0d1117',
+                'bg_secondary': '#161b22',
+                'bg_tertiary': '#21262d',
+                'fg_primary': '#c9d1d9',
+                'fg_secondary': '#8b949e',
+                'accent': '#58a6ff',
+                'success': '#238636',
+                'warning': '#d29922',
+                'error': '#f85149',
+                'user_color': '#ffd700',
+                'crew_color': '#7ee787',
+                'enemy_color': '#ff7b72',
+                'neutral_color': '#79c0ff',
+                'info_color': '#58a6ff'
+            }
         }
-    }
+
+    def register_widget(self, widget, widget_type='frame'):
+        """Registrar widget para aplicar tema"""
+        self.registered_widgets.append((widget, widget_type))
+
+    def apply_theme(self, theme_name):
+        """Aplicar tema a todos los widgets registrados"""
+        if theme_name not in self.themes:
+            return False
+
+        self.current_theme = theme_name
+        theme = self.themes[theme_name]
+
+        try:
+            # Aplicar al root
+            self.root.configure(bg=theme['bg_primary'])
+
+            # Aplicar a widgets registrados
+            for widget, widget_type in self.registered_widgets:
+                self._apply_widget_theme(widget, widget_type, theme)
+
+            # Configurar ttk styles
+            self._configure_ttk_styles(theme)
+
+            return True
+
+        except Exception as e:
+            print(f"Error aplicando tema: {e}")
+            return False
+
+    def _apply_widget_theme(self, widget, widget_type, theme):
+        """Aplicar tema a un widget específico"""
+        try:
+            if widget_type == 'frame':
+                widget.configure(bg=theme['bg_primary'])
+            elif widget_type == 'label':
+                widget.configure(bg=theme['bg_primary'], fg=theme['fg_primary'])
+            elif widget_type == 'button':
+                widget.configure(bg=theme['bg_tertiary'], fg=theme['fg_primary'])
+            elif widget_type == 'entry':
+                widget.configure(bg=theme['bg_tertiary'], fg=theme['fg_primary'], 
+                               insertbackground=theme['fg_primary'])
+            elif widget_type == 'text':
+                widget.configure(bg=theme['bg_secondary'], fg=theme['fg_primary'],
+                               insertbackground=theme['fg_primary'])
+                # Reconfigurar tags de colores
+                widget.tag_configure("user", foreground=theme['user_color'])
+                widget.tag_configure("crew", foreground=theme['crew_color'])
+                widget.tag_configure("enemy", foreground=theme['enemy_color'])
+                widget.tag_configure("neutral", foreground=theme['neutral_color'])
+                widget.tag_configure("info", foreground=theme['info_color'])
+                widget.tag_configure("success", foreground=theme['success'])
+                widget.tag_configure("warning", foreground=theme['warning'])
+                widget.tag_configure("timestamp", foreground=theme['fg_secondary'])
+            elif widget_type == 'listbox':
+                widget.configure(bg=theme['bg_tertiary'], fg=theme['fg_primary'])
+            elif widget_type == 'checkbutton':
+                widget.configure(bg=theme['bg_primary'], fg=theme['fg_primary'],
+                               selectcolor=theme['bg_tertiary'])
+        except:
+            pass  # Widget puede haber sido destruido
+
+    def _configure_ttk_styles(self, theme):
+        """Configurar estilos de ttk"""
+        try:
+            import tkinter.ttk as ttk
+            style = ttk.Style()
+
+            # Notebook
+            style.configure('TNotebook', background=theme['bg_primary'])
+            style.configure('TNotebook.Tab', 
+                          background=theme['bg_tertiary'], 
+                          foreground=theme['fg_primary'])
+            style.map('TNotebook.Tab',
+                     background=[('selected', theme['accent'])])
+
+            # Combobox
+            style.configure('TCombobox',
+                          fieldbackground=theme['bg_tertiary'],
+                          background=theme['bg_tertiary'],
+                          foreground=theme['fg_primary'])
+
+        except Exception as e:
+            print(f"Error configurando estilos ttk: {e}")
+
+    def get_current_theme(self):
+        """Obtener tema actual"""
+        return self.current_theme
+
+    def get_theme_colors(self, theme_name=None):
+        """Obtener colores del tema"""
+        if theme_name is None:
+            theme_name = self.current_theme
+        return self.themes.get(theme_name, self.themes['dark'])
 
     @classmethod
     def apply_theme(cls, root, theme_name):
