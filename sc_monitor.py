@@ -1195,6 +1195,14 @@ class StarCitizenLogMonitor:
         if self.config.get('auto_start', False):
             self.root.after(1000, self.start_monitoring)
 
+    def save_config(self):
+        try:
+            with open("sc_monitor_config.json", "w", encoding="utf-8") as f:
+                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            logger.info("Configuración guardada correctamente")
+        except Exception as e:
+            logger.error(f"Error guardando configuración: {e}")
+
     def setup_database(self):
         """Configurar base de datos"""
         try:
@@ -1234,7 +1242,7 @@ class StarCitizenLogMonitor:
     def load_config(self):
         """Cargar configuración desde archivo"""
         self.config = {
-            'current_user': 'endermaster',
+            'current_user': 'Por defecto',
             'log_filename': r'C:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log',
             'crew_nicks': [],
             'players_blacklist': [],
@@ -1325,7 +1333,7 @@ class StarCitizenLogMonitor:
         self.message_count = 0
 
         # Variables de la configuración
-        self.CURRENT_USER = self.config.get('current_user', 'endermaster')
+        self.CURRENT_USER = self.config.get('current_user', 'Por defecto')
         self.LOG_FILENAME = self.config.get('log_filename', r'C:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log')
         self.CREW_NICKS = self.config.get('crew_nicks', [])
         self.PLAYERS_BLACKLIST = self.config.get('players_blacklist', [])
@@ -1369,40 +1377,40 @@ class StarCitizenLogMonitor:
 
         # Botones de control
         self.start_button = tk.Button(control_frame, text="▶ Iniciar", 
-                                    command=self.start_monitoring,
-                                    bg='#2d5a2d', fg='white', relief=tk.FLAT, width=10)
+            command=self.start_monitoring,
+            bg='#2d5a2d', fg='white', relief=tk.FLAT, width=10)
         self.start_button.pack(side=tk.LEFT, padx=(0, 5))
 
         self.stop_button = tk.Button(control_frame, text="⏹ Detener", 
-                                   command=self.stop_monitoring,
-                                   bg='#5a2d2d', fg='white', relief=tk.FLAT, width=10,
-                                   state=tk.DISABLED)
+            command=self.stop_monitoring,
+            bg='#5a2d2d', fg='white', relief=tk.FLAT, width=10,
+            state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT, padx=(0, 5))
 
         self.clear_button = tk.Button(control_frame, text="🗑 Limpiar", 
-                                    command=self.clear_messages,
-                                    bg='#404040', fg='white', relief=tk.FLAT, width=10)
+            command=self.clear_messages,
+            bg='#404040', fg='white', relief=tk.FLAT, width=10)
         self.clear_button.pack(side=tk.LEFT, padx=(0, 5))
 
         # Botón de configuración
         self.config_button = tk.Button(control_frame, text="⚙️ Config", 
-                                     command=self.open_config,
-                                     bg='#404040', fg='white', relief=tk.FLAT, width=10)
+            command=self.open_config,
+            bg='#404040', fg='white', relief=tk.FLAT, width=10)
         self.config_button.pack(side=tk.LEFT, padx=(0, 5))
 
         # Botón de estadísticas
         self.stats_button = tk.Button(control_frame, text="📊 Stats", 
-                                    command=self.open_stats,
-                                    bg='#404040', fg='white', relief=tk.FLAT, width=10)
+            command=self.open_stats,
+            bg='#404040', fg='white', relief=tk.FLAT, width=10)
         self.stats_button.pack(side=tk.LEFT, padx=(0, 5))
 
         # Checkbox para overlay mode
         self.overlay_var = tk.BooleanVar()
         self.overlay_check = tk.Checkbutton(control_frame, text="Modo Overlay", 
-                                          variable=self.overlay_var,
-                                          command=self.toggle_overlay_mode,
-                                          bg='#1a1a1a', fg='white', 
-                                          selectcolor='#404040')
+            variable=self.overlay_var,
+            command=self.toggle_overlay_mode,
+            bg='#1a1a1a', fg='white', 
+            selectcolor='#404040')
         self.overlay_check.pack(side=tk.LEFT, padx=(10, 0))
 
         # Frame para información rápida
@@ -1544,9 +1552,10 @@ class StarCitizenLogMonitor:
     def apply_config(self, new_config):
         """Aplicar nueva configuración"""
         self.config.update(new_config)
+        self.save_config()
 
         # Actualizar variables
-        self.CURRENT_USER = self.config.get('current_user', 'endermaster')
+        self.CURRENT_USER = self.config.get('current_user', 'Por defecto')
         self.LOG_FILENAME = self.config.get('log_filename', '')
         self.CREW_NICKS = self.config.get('crew_nicks', [])
         self.PLAYERS_BLACKLIST = self.config.get('players_blacklist', [])

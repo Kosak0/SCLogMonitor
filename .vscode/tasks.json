@@ -2,6 +2,22 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Clean Build Files",
+            "type": "shell",
+            "command": "cmd.exe",
+            "args": [
+                "/c",
+                "if exist build rmdir /s /q build & if exist dist rmdir /s /q dist & if exist *.spec del *.spec & echo Build files cleaned!"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
             "label": "Build StarCitizen Monitor EXE",
             "type": "shell",
             "command": "pyinstaller",
@@ -10,7 +26,7 @@
                 "--windowed",
                 "--name", "StarCitizenMonitor",
                 "--icon=logoStar.ico",
-                "--add-data=*.json:.",
+                "--add-data=sc_monitor_config.json:.",
                 "--add-data=logoStar.ico:.",
                 "--hidden-import=tkinter",
                 "--hidden-import=tkinter.ttk",
@@ -24,6 +40,10 @@
                 "--noconfirm",
                 "sc_monitor.py"
             ],
+            "dependsOn": [
+                "Clean Build Files"
+            ],
+            "dependsOrder": "sequence",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -64,23 +84,10 @@
                 "--noconfirm",
                 "sc_monitor.py"
             ],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Clean Build Files",
-            "type": "shell",
-            "command": "cmd",
-            "args": [
-                "/c",
-                "if exist build rmdir /s /q build && if exist dist rmdir /s /q dist && if exist *.spec del *.spec && echo Build files cleaned!"
+            "dependsOn": [
+                "Clean Build Files"
             ],
+            "dependsOrder": "sequence",
             "group": "build",
             "presentation": {
                 "echo": true,

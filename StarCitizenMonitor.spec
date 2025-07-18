@@ -5,7 +5,7 @@ a = Analysis(
     ['sc_monitor.py'],
     pathex=[],
     binaries=[],
-    datas=[('*.json', '.'), ('logoStar.ico', '.')],
+    datas=[('sc_monitor_config.json', '.'), ('logoStar.ico', '.')],
     hiddenimports=['tkinter', 'tkinter.ttk', 'tkinter.scrolledtext', 'tkinter.messagebox', 'tkinter.filedialog', 'requests', 'lxml', 'lxml.html'],
     hookspath=[],
     hooksconfig={},
